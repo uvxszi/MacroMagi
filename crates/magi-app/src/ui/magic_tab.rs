@@ -47,6 +47,7 @@ pub enum MagicEvent {
     NewModel {
         text: bool,
     },
+    NewTestMagi,
     Open,
     Import(ImportFrom),
     ReplaceModel,
@@ -1442,8 +1443,12 @@ fn empty_state(ui: &mut Ui, events: &mut Vec<MagicEvent>) {
             );
             response.clicked()
         };
-        if start(ui, icon::ROBOT, "New text model", "An example assistant that thinks and uses tools") {
+        if start(ui, icon::ROBOT, "New text model", "Magi: an agent of about 418M parameters") {
             events.push(MagicEvent::NewModel { text: true });
+        }
+        ui.add_space(6.0);
+        if start(ui, icon::ROBOT, "Magi 150M", "The same at about 150M, to try in a few hours") {
+            events.push(MagicEvent::NewTestMagi);
         }
         ui.add_space(6.0);
         if start(ui, icon::EYE, "New vision model", "Tells what is on the screen apart") {

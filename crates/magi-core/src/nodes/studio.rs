@@ -2578,6 +2578,17 @@ const STEP: f32 = 250.0;
 /// training further for one with weights, using it as it is for one made
 /// elsewhere.
 pub fn default_canvas(model: &MagicModel, has_weights: bool, has_onnx: bool, datasets: &[(String, bool)]) -> Fragment {
+    default_canvas_for(model, has_weights, has_onnx, datasets, &MAGI)
+}
+
+/// The canvas a model starts with; a new text model is Magi at `size`.
+pub fn default_canvas_for(
+    model: &MagicModel,
+    has_weights: bool,
+    has_onnx: bool,
+    datasets: &[(String, bool)],
+    size: &MagiSize,
+) -> Fragment {
     use kinds::*;
     let mut b = Builder::new();
     let text = model.kind == ModelKind::Text;
@@ -2640,7 +2651,7 @@ pub fn default_canvas(model: &MagicModel, has_weights: bool, has_onnx: bool, dat
         // The architecture: the model's own, Magi for text, a small one for vision.
         let blocks: Vec<ArchBlock> = match &model.architecture {
             Some(a) if !a.blocks.is_empty() => a.blocks.clone(),
-            _ if text => magi_blocks(),
+            _ if text => magi_blocks_of(size),
             _ => vec![
                 ArchBlock {
                     kind: SIZE.into(),
@@ -2682,22 +2693,23 @@ pub fn default_canvas(model: &MagicModel, has_weights: bool, has_onnx: bool, dat
                     CORPUS,
                     [x, row + 450.0],
                     json!({ "repo": "OpenCoder-LLM/opc-fineweb-code-corpus", "files": "data/train-*.parquet",
-                            "field": "text", "tokens": 750_000_000u64 }),
+                            "field": "text", "tokens": size.code_tokens }),
                 );
                 b.nodes.last_mut().expect("added").label = "Code on the web (pretraining)".into();
                 b.wire(files, "positive", code, "with");
-                let web = b.add(CORPUS, [x, row + 230.0], json!({ "tokens": 2_250_000_000u64 }));
+                let web = b.add(CORPUS, [x, row + 230.0], json!({ "tokens": size.web_tokens }));
                 b.nodes.last_mut().expect("added").label = "FineWeb-Edu (pretraining)".into();
                 b.wire(code, "positive", web, "with");
                 // Muon, as DeepSeek-V4 trains: 16 rows of 8,192 tokens a step, four steps a weight update.
                 let optimizer = b.add(
                     OPTIMIZER,
                     [x + STEP * 0.5, row - 210.0],
-                    json!({ "name": "muon", "muon_lr": 0.002, "embed_lr": 0.006, "warmup": 1000, "accumulate": 4 }),
+                    json!({ "name": "muon", "muon_lr": 0.002, "embed_lr": 0.006, "warmup": size.warmup, "accumulate": 4 }),
                 );
                 b.nodes.last_mut().expect("added").label = "Optimizer (pretraining)".into();
-                // Three billion tokens.
-                let pretrain = place(&mut b, PRETRAIN, json!({ "steps": 22_900, "batch": 16 }), &mut last, &mut x);
+                // The corpora once over: three billion tokens for Magi.
+                let pretrain =
+                    place(&mut b, PRETRAIN, json!({ "steps": size.pretrain_steps, "batch": 16 }), &mut last, &mut x);
                 b.wire(web, "positive", pretrain, "data");
                 b.wire(optimizer, OPTIMIZER, pretrain, OPTIMIZER);
             }
@@ -2717,17 +2729,19 @@ pub fn default_canvas(model: &MagicModel, has_weights: bool, has_onnx: bool, dat
                 json!({ "name": "muon", "muon_lr": 0.001, "embed_lr": 0.003, "warmup": 100 }),
             );
             b.nodes.last_mut().expect("added").label = "Optimizer (fine-tuning)".into();
-            let finetune = place(&mut b, FINETUNE, json!({ "steps": 4_000, "batch": 8 }), &mut last, &mut x);
+            let finetune =
+                place(&mut b, FINETUNE, json!({ "steps": size.finetune_steps, "batch": 8 }), &mut last, &mut x);
             b.wire(chats, "positive", finetune, "data");
             b.wire(work, "negative", finetune, "negative");
             b.wire(tuning, OPTIMIZER, finetune, OPTIMIZER);
-            let compaction = place(&mut b, COMPACTION, json!({ "steps": 400, "batch": 8 }), &mut last, &mut x);
+            let compaction =
+                place(&mut b, COMPACTION, json!({ "steps": size.compaction_steps, "batch": 8 }), &mut last, &mut x);
             b.wire(work, "positive", compaction, "data");
             b.wire(tuning, OPTIMIZER, compaction, OPTIMIZER);
             let rl = place(
                 &mut b,
                 RL,
-                json!({ "steps": 300, "group": 8, "max_new": 384, "temperature": 0.8, "rules": agent_rules() }),
+                json!({ "steps": size.rl_steps, "group": 8, "max_new": 384, "temperature": 0.8, "rules": agent_rules() }),
                 &mut last,
                 &mut x,
             );
@@ -2801,6 +2815,63 @@ pub fn magi_effort() -> EffortSpec {
 /// - DeepSeek-V3's multi-token prediction while training (it predicts the token after next too);
 /// - 8,192 tokens while training, stretched by YaRN to 128K when it runs.
 pub fn magi_blocks() -> Vec<ArchBlock> {
+    magi_blocks_of(&MAGI)
+}
+
+/// A size of Magi: the same design – windows, experts, multi-token prediction – at a width and
+/// depth, and the recipe scaled to it.
+pub struct MagiSize {
+    pub name: &'static str,
+    pub width: u32,
+    pub heads: u32,
+    pub kv_heads: u32,
+    /// All the layers: three plain ones, then layers with experts.
+    pub layers: u32,
+    pub pretrain_steps: u64,
+    /// Tokens of FineWeb-Edu and of code to pretrain on (16 rows of 8,192 tokens a step reads them once).
+    pub web_tokens: u64,
+    pub code_tokens: u64,
+    pub warmup: u64,
+    pub finetune_steps: u64,
+    pub compaction_steps: u64,
+    pub rl_steps: u64,
+}
+
+/// Magi: about 418M parameters, 148M at work per token; three billion tokens of pretraining.
+pub const MAGI: MagiSize = MagiSize {
+    name: "Magi",
+    width: 768,
+    heads: 12,
+    kv_heads: 4,
+    layers: 32,
+    pretrain_steps: 22_900,
+    web_tokens: 2_250_000_000,
+    code_tokens: 750_000_000,
+    warmup: 1000,
+    finetune_steps: 4_000,
+    compaction_steps: 400,
+    rl_steps: 300,
+};
+
+/// Magi at about 150M parameters (64M at work per token), on 750 million tokens: the whole recipe
+/// in a few hours on a GPU server, to try it before the full size.
+pub const MAGI_TEST: MagiSize = MagiSize {
+    name: "Magi 150M",
+    width: 512,
+    heads: 8,
+    kv_heads: 4,
+    layers: 24,
+    pretrain_steps: 5_700,
+    web_tokens: 560_000_000,
+    code_tokens: 190_000_000,
+    warmup: 300,
+    finetune_steps: 1_000,
+    compaction_steps: 100,
+    rl_steps: 100,
+};
+
+/// Magi's architecture blocks at `size`.
+pub fn magi_blocks_of(size: &MagiSize) -> Vec<ArchBlock> {
     use kinds::*;
     let layers = |count: u32| json!({ "layers": count, "mult": 2.75, "more": true, "qk_norm": true, "window": 1024, "global_every": 4 });
     let experts = block(
@@ -2810,11 +2881,12 @@ pub fn magi_blocks() -> Vec<ArchBlock> {
     vec![
         block(
             SIZE,
-            json!({ "width": 768, "heads": 12, "kv_heads": 4, "context": 8192, "rope_theta": 500000.0, "tied": true }),
+            json!({ "width": size.width, "heads": size.heads, "kv_heads": size.kv_heads, "context": 8192,
+                    "rope_theta": 500000.0, "tied": true }),
         ),
         block(MTP, json!({ "weight": 0.3 })),
         block(LAYERS, layers(3)),
-        with_ffn(block(LAYERS, layers(29)), experts),
+        with_ffn(block(LAYERS, layers(size.layers - 3)), experts),
         block(CONTEXT, json!({ "train": "0", "target": "131072", "method": "yarn" })),
     ]
 }
@@ -2828,21 +2900,29 @@ fn with_ffn(mut b: ArchBlock, ffn: ArchBlock) -> ArchBlock {
     b
 }
 
-/// The architectures Presets › Commons offers: Magi.
+/// The architectures Presets › Commons offers: Magi, and Magi 150M to try a recipe quickly.
 pub fn commons() -> Vec<Common> {
-    vec![Common {
-        name: "Magi",
-        description: "MacroMagi's text architecture: about 418M parameters, 148M at work per token. 32 layers, \
+    let setup = || {
+        vec![(kinds::THINKING, magi_thinking()), (kinds::EFFORT, json!(magi_effort())), (kinds::MEMORY, Value::Null)]
+    };
+    vec![
+        Common {
+            name: "Magi",
+            description: "MacroMagi's text architecture: about 418M parameters, 148M at work per token. 32 layers, \
                       three in four looking at the last 1,024–2,048 tokens, DeepSeekMoE experts, multi-token prediction \
                       while training, 8K tokens in training and 128K when it runs. It trains on a GPU server \
                       (File › Export as Python) and runs in MacroMagi.",
-        blocks: magi_blocks(),
-        setup: vec![
-            (kinds::THINKING, magi_thinking()),
-            (kinds::EFFORT, json!(magi_effort())),
-            (kinds::MEMORY, Value::Null),
-        ],
-    }]
+            blocks: magi_blocks(),
+            setup: setup(),
+        },
+        Common {
+            name: "Magi 150M",
+            description: "Magi's design at about 150M parameters, 64M at work per token: 512 wide, 24 layers. \
+                          To try a recipe in a few hours before training the full size.",
+            blocks: magi_blocks_of(&MAGI_TEST),
+            setup: setup(),
+        },
+    ]
 }
 
 /// What reinforcement learning rewards in an agent: finishing, calling tools well – the tool the
@@ -3558,7 +3638,7 @@ mod tests {
 
     #[test]
     fn commons_put_magi_back_in_place() {
-        assert_eq!(commons().iter().map(|c| c.name).collect::<Vec<_>>(), ["Magi"], "Magi only");
+        assert_eq!(commons().iter().map(|c| c.name).collect::<Vec<_>>(), ["Magi", "Magi 150M"], "Magi only");
         let mut graph = Graph::from(default_canvas(&text_model(), false, false, &files()));
         // Changed by hand…
         let layers: Vec<NodeId> = graph.nodes().filter(|n| n.kind == kinds::LAYERS).map(|n| n.id).collect();

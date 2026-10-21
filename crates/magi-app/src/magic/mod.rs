@@ -715,8 +715,13 @@ pub fn file_stem(name: &str) -> String {
 /// A new model, with a canvas ready to train it: for a text model, Magi – an agent of about
 /// 400M parameters with its tools and datasets, set up to train on a GPU server.
 pub fn new_model(text: bool) -> MagicFile {
+    new_model_of(text, &studio::MAGI)
+}
+
+/// A new model: Magi at `size` (text), or a small vision model.
+pub fn new_model_of(text: bool, size: &studio::MagiSize) -> MagicFile {
     let mut model = MagicModel {
-        name: if text { "Magi" } else { "My vision model" }.into(),
+        name: if text { size.name } else { "My vision model" }.into(),
         description: if text {
             "An agent: it plans, looks up how things are done in MagiDB, and works through tools – code, files, documents, pictures and the web.".into()
         } else {
@@ -760,7 +765,7 @@ pub fn new_model(text: bool) -> MagicFile {
             magi_core::magic::ClassSpec { label: "No".into(), threshold: 0.5, ..Default::default() },
         ];
     }
-    let canvas = studio::default_canvas(&model, false, false, &datasets);
+    let canvas = studio::default_canvas_for(&model, false, false, &datasets, size);
     model.studio = Some(canvas);
     model.datasets = datasets.iter().map(|(f, _)| f.clone()).collect();
     MagicFile { model, data, ..MagicFile::default() }
@@ -1122,6 +1127,48 @@ mod tests {
             let requirements = std::fs::read_to_string(dir.join("requirements.txt")).unwrap();
             assert!(requirements.contains("huggingface_hub") && requirements.contains("tokenizers"));
         }
+    }
+
+    /// Magi 150M is Magi's design and recipe at a third of the size: 512 wide, 24 layers, 750M tokens.
+    /// With MAGI_TEST_EXPORT_SMALL, it is exported as Python there.
+    #[test]
+    fn magi_150m_is_magi_at_a_smaller_size() {
+        let doc = MagicDoc::new(new_model_of(true, &studio::MAGI_TEST), None, Vec::new());
+        assert_eq!(doc.title(), "Magi 150M");
+        let pipeline = studio::pipeline(&doc.studio.graph).unwrap();
+        let architecture = &pipeline.architecture;
+        assert_eq!((architecture.width, architecture.heads, architecture.layers.len()), (512, 8, 24));
+        let files = studio::PlanFiles {
+            dataset: &|file: &str| Some(file.to_owned()),
+            weights: None,
+            pictures: None,
+            out_dir: "out".into(),
+            devices: Vec::new(),
+        };
+        let plan = studio::plan(&pipeline, &doc.studio.graph, &doc.file.model, &files).unwrap();
+        let steps: Vec<u64> = plan["stages"].as_array().unwrap().iter().filter_map(|s| s["steps"].as_u64()).collect();
+        assert_eq!(steps, [5_700, 1_000, 100, 100]);
+        if let Some(out) = std::env::var_os("MAGI_TEST_EXPORT_SMALL") {
+            let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/python");
+            crate::magic::export_python::export(&doc, &runtime, std::path::Path::new(&out), false).unwrap();
+        }
+    }
+
+    /// A Magi model trained elsewhere (MAGI_TEST_SZI) opens and answers on the native engine.
+    #[test]
+    #[ignore = "needs a trained .szi"]
+    fn a_trained_szi_answers_on_the_native_engine() {
+        let path = std::path::PathBuf::from(std::env::var_os("MAGI_TEST_SZI").expect("MAGI_TEST_SZI"));
+        let file = magi_core::szi::open(&path).unwrap();
+        let architecture = file.model.architecture.clone().expect("an architecture");
+        let memory = file.model.memory.clone().unwrap_or_default();
+        let dir = std::env::temp_dir().join(format!("magi-szi-answers-{}", std::process::id()));
+        let mut model = magi_ml::TextModel::load_native(&architecture, &file.weights, &memory, &dir).unwrap();
+        let spec = file.model.text.clone().expect("a text model");
+        let answer = magi_ml::ask(&mut model, &spec, "Hello!", 16, 0.0, 1).unwrap();
+        println!("{} parameters' answer: {:?}", file.weights.len() / 4, answer.raw);
+        assert!(!answer.raw.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
