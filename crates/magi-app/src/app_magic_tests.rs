@@ -229,7 +229,7 @@ fn the_magic_tab_works_through_its_interface() {
     click(&mut h, "Presets");
     click(&mut h, "Commons");
     assert!(!shows(&h, "Qwen3 (small)") && !shows(&h, "Magi-F1DS"), "only Magi is offered");
-    click_exact(&mut h, "Magi");
+    click_exact(&mut h, "Magi 400M");
     assert_eq!(layers(&h), 32);
     h.state_mut().undo();
     h.run_steps(3);
