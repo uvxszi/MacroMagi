@@ -211,8 +211,9 @@ pub fn export(doc: &MagicDoc, runtime: &Path, into: &Path, compile: bool) -> Res
          Any computer with Python and an NVIDIA graphics card can run it – a rented GPU server too: copy this \
          folder there, run the two lines above, and copy `{stem}.szi` back.\n\n\
          On **Google Colab**: zip this folder, open `colab.ipynb` in Colab (File › Upload notebook), choose a GPU \
-         (Runtime › Change runtime type), and run its cells. It asks for the zip, trains, and downloads \
-         `{stem}.szi`; open it in MacroMagi.\n",
+         (Runtime › Change runtime type), and run its cells. It asks for the zip once and keeps everything on \
+         Google Drive, so when a session ends you run the cells again and it goes on; at the end it downloads \
+         `{stem}.szi` (a copy stays on Drive). Open it in MacroMagi.\n",
         name = doc.title(),
         layers = pipeline.architecture.layers.len(),
         width = pipeline.architecture.width,
@@ -224,7 +225,8 @@ pub fn export(doc: &MagicDoc, runtime: &Path, into: &Path, compile: bool) -> Res
     Ok(dir)
 }
 
-/// A Colab notebook: upload the zipped folder, install, train, download the Magi model.
+/// A Colab notebook: the zipped folder (uploaded once, then kept on Google Drive with the run and the
+/// corpora), install, train, download the Magi model.
 fn colab_notebook(folder: &str, stem: &str, requirements: &str) -> String {
     let cell = |kind: &str, lines: &[&str]| {
         let source: Vec<String> = lines
@@ -239,26 +241,31 @@ fn colab_notebook(folder: &str, stem: &str, requirements: &str) -> String {
         }
         cell
     };
-    let upload = format!(
-        "from google.colab import files\nimport zipfile, os\nuploaded = files.upload()\nzipfile.ZipFile(next(iter(uploaded))).extractall('.')\nos.chdir('{}')\nprint(os.listdir('.'))",
-        folder.replace('\'', "\\'")
+    let quoted = |text: &str| text.replace('\\', "\\\\").replace('\'', "\\'");
+    let (folder_q, stem_q) = (quoted(folder), quoted(stem));
+    // Everything on Google Drive – the project, the run and the corpora – so a session that ends
+    // loses nothing: run the cells again and it goes on, with no upload.
+    let project = format!(
+        "from google.colab import drive, files\nimport os, shutil, zipfile\ndrive.mount('/content/drive')\n\
+         keep = '/content/drive/MyDrive/MacroMagi/{stem_q}'\ncode = keep + '/project'\n\
+         NEW_ZIP = False  # True: upload a new export (a saved run goes on only when its plan is the same)\n\
+         os.chdir('/content')\nshutil.rmtree('{folder_q}', ignore_errors=True)\n\
+         if NEW_ZIP or not os.path.exists(code + '/run.py'):\n    uploaded = files.upload()\n\
+         \x20   zipfile.ZipFile(next(iter(uploaded))).extractall('.')\n    shutil.rmtree(code, ignore_errors=True)\n\
+         \x20   shutil.copytree('{folder_q}', code, ignore=shutil.ignore_patterns('out', '__pycache__'))\n\
+         else:\n    shutil.copytree(code, '{folder_q}')\n\
+         os.chdir('{folder_q}')\nos.makedirs(keep + '/out', exist_ok=True)\n\
+         if os.path.isdir('out') and not os.path.islink('out'):\n    shutil.rmtree('out')\n\
+         if not os.path.exists('out'):\n    os.symlink(keep + '/out', 'out')\n\
+         os.environ['MAGI_CORPUS_DIR'] = keep + '/corpus'\nprint('Kept on Google Drive in', keep)"
     );
-    let download = format!("files.download('{stem}.szi')", stem = stem.replace('\'', "\\'"));
+    let download = format!("shutil.copy('{stem_q}.szi', keep)\nfiles.download('{stem_q}.szi')");
     // Colab has PyTorch already (its CUDA build): only the rest is installed.
     let rest: Vec<&str> = requirements.split_whitespace().filter(|r| *r != "torch").collect();
     let mut setup = vec!["!nvidia-smi -L".to_owned()];
     if !rest.is_empty() {
         setup.push(format!("!pip install -q {}", rest.join(" ")));
     }
-    // The run's folder and the corpora on Google Drive, so a run outlives a session.
-    let keep = format!(
-        "from google.colab import drive\nimport os, shutil\ndrive.mount('/content/drive')\n\
-         keep = '/content/drive/MyDrive/MacroMagi/{stem}'\nos.makedirs(keep + '/out', exist_ok=True)\n\
-         if os.path.isdir('out') and not os.path.islink('out'):\n    shutil.rmtree('out')\n\
-         if not os.path.exists('out'):\n    os.symlink(keep + '/out', 'out')\n\
-         os.environ['MAGI_CORPUS_DIR'] = keep + '/corpus'\nprint('Saving into', keep)",
-        stem = stem.replace('\'', "\\'")
-    );
     let notebook = serde_json::json!({
         "nbformat": 4,
         "nbformat_minor": 5,
@@ -274,16 +281,14 @@ fn colab_notebook(folder: &str, stem: &str, requirements: &str) -> String {
                 "",
                 "1. Runtime › Change runtime type › a **GPU**.",
                 &format!("2. Zip the folder *{folder}* on your computer."),
-                "3. Run the cells in order: the first asks for the zip.",
+                "3. Run the cells in order. The first asks for the zip, the first time only.",
+                "",
+                &format!("Everything is kept on Google Drive, in *MyDrive/MacroMagi/{stem}*: the project, the run (saved \
+                 every 20 minutes) and the corpora, cut into tokens once. When a session ends, run the cells again: it \
+                 goes on where it stopped, with no upload. For a new export of the folder, set `NEW_ZIP = True` once."),
             ]),
-            cell("code", &upload.lines().collect::<Vec<_>>()),
+            cell("code", &project.lines().collect::<Vec<_>>()),
             cell("code", &setup.iter().map(String::as_str).collect::<Vec<_>>()),
-            cell("markdown", &[
-                "**Long runs:** run the next cell to keep the run on Google Drive. It saves every 20 minutes, so when a \
-                 session ends you run the cells again and it goes on from there; a corpus is cut into tokens once and \
-                 kept there too.",
-            ]),
-            cell("code", &keep.lines().collect::<Vec<_>>()),
             cell("code", &["!python run.py"]),
             cell("code", &download.lines().collect::<Vec<_>>()),
         ]
