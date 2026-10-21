@@ -1228,6 +1228,61 @@ def train_vision(plan, out_dir):
     return {"stages": ["vision"], "steps": counter[0], "loss": loss_value, "parameters": blocks.parameter_count(model)}
 
 
+def needs_rehearsal(plan, out_dir):
+    """A long text run that has not started yet (no saved run): it is rehearsed first.
+    MAGI_TRAIN_REHEARSE=0 or the plan's "rehearse": false skip it."""
+    if plan.get("kind") == "vision" or not plan.get("rehearse", True) or os.environ.get("MAGI_TRAIN_REHEARSE") == "0":
+        return False
+    if any(os.path.exists(os.path.join(out_dir, name)) for name in ("resume.pt", "resume.prev.pt")):
+        return False
+    return sum(int(stage.get("steps", 0) or 0) for stage in plan.get("stages", [])) > 1000
+
+
+def rehearse(plan, out_dir):
+    """Every stage for a few steps on the real model and data, then writing the model – a few minutes
+    that find what would fail hours into a long run. The tokens it learns and the corpora it cuts are
+    kept for the run; nothing else is."""
+    global ESTIMATE
+    import gc
+    import shutil
+    import traceback
+    folder = os.path.join(out_dir, "rehearsal")
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder)
+    trial = json.loads(json.dumps(plan))
+    trial["out_dir"] = folder
+    trial["compile"] = False
+    for stage in trial.get("stages", []):
+        stage["steps"] = min(int(stage.get("steps", 1) or 1), 3)
+        if stage.get("type") == "rl":
+            try:
+                stage["max_new"] = min(int(stage.get("max_new", 32) or 32), 32)
+            except (TypeError, ValueError):
+                pass  # the stage says what is wrong with it when it runs
+    tokens = os.path.join(out_dir, "tokenizer.json")
+    if os.path.exists(tokens):
+        shutil.copy(tokens, folder)
+    log("Rehearsal: every stage for a few steps, and writing the model, before the long run starts.")
+    trainer = None
+    try:
+        trainer = TextTrainer(trial)
+        trainer.run(folder)
+    except (Exception, SystemExit) as error:  # noqa: BLE001 - whatever fails, the long run must not start
+        for line in traceback.format_exc().splitlines()[-12:]:
+            log(line)
+        raise SystemExit("The rehearsal failed, so the long run did not start: %s" % (str(error) or type(error).__name__))
+    finally:
+        trainer = None
+        ESTIMATE = Estimate()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    if os.path.exists(os.path.join(folder, "tokenizer.json")):
+        shutil.copy(os.path.join(folder, "tokenizer.json"), tokens)
+    shutil.rmtree(folder, ignore_errors=True)
+    log("Rehearsal passed: every stage ran and the model was written. The long run starts.")
+
+
 def main(path):
     with open(path, encoding="utf-8") as handle:
         plan = json.load(handle)
@@ -1244,6 +1299,9 @@ def main(path):
         if plan.get("kind") == "vision":
             report = train_vision(plan, out_dir)
         else:
+            if needs_rehearsal(plan, out_dir):
+                rehearse(plan, out_dir)
+                STARTED = time.time()
             report = TextTrainer(plan).run(out_dir)
     except SystemExit as stop:
         emit("error", message=str(stop))
