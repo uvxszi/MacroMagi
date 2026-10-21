@@ -15,6 +15,7 @@ File-format changes are called out explicitly; see [docs/FILE_FORMAT.md](docs/FI
 
 ### Fixed
 
+- **A long run could turn into NaN and save it over its only good save.** The experts' router (√Softplus) had an infinite gradient once a score fell below about −104 – one step made every weight NaN, and the next saves kept them. The router now works in float32 away from zero; a step whose gradients are not numbers is skipped (fifty in a row stop the run); a broken model is never saved, the save before is kept as `resume.prev.pt` and used when the last one is broken; and `out/train.log` keeps the console's lines, with each step's gradient norm.
 - `macromagi FILE.szi` opens the Magi model in the Magic tab (it was read as a macro and failed); the command line's help names the Magic tab.
 - **MagiDB downloads again**: *Settings › Runtime* and the `db_search`/`db_read` tools read MagiDB from `MagiGun/MagiDB` (they looked for `MacroMagi/MagiDB`, which does not exist).
 

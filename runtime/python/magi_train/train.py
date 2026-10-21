@@ -47,10 +47,21 @@ from . import blocks, corpus, data, optim, safetensors  # noqa: E402
 from .tokens import Tokenizer  # noqa: E402
 
 
+# The run's log, beside its saves (`out_dir/train.log`): what the console showed, kept when it is gone.
+LOG_FILE = None
+
+
 def emit(event, **fields):
     fields["event"] = event
-    sys.stdout.write(json.dumps(fields) + "\n")
+    line = json.dumps(fields) + "\n"
+    sys.stdout.write(line)
     sys.stdout.flush()
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as handle:
+                handle.write(line)
+        except OSError:
+            pass
 
 
 def log(message):
@@ -100,16 +111,25 @@ class Resume:
 
     def __init__(self, path, fingerprint):
         self.path, self.fingerprint = path, fingerprint
+        self.previous = path[:-3] + ".prev.pt" if path.endswith(".pt") else path + ".prev"
         self.every = float(os.environ.get("MAGI_TRAIN_SAVE_MINUTES", "20")) * 60
         self.saved_at = time.time()
         self.stage = 0
         self.state = None
-        if os.path.exists(path):
-            state = torch.load(path, map_location="cpu", weights_only=False)
-            if state.get("fingerprint") == fingerprint:
-                self.state = state
-            else:
-                log("A saved run in %s is for another plan: it starts over." % path)
+        for candidate in (path, self.previous):
+            if not os.path.exists(candidate):
+                continue
+            state = torch.load(candidate, map_location="cpu", weights_only=False)
+            if state.get("fingerprint") != fingerprint:
+                log("A saved run in %s is for another plan: it starts over." % candidate)
+                break
+            if not all(bool(torch.isfinite(v).all()) for v in state["model"].values()
+                       if torch.is_tensor(v) and v.is_floating_point()):
+                emit("warning", message="The saved run in %s has weights that are not numbers (NaN): %s"
+                     % (candidate, "the one before is tried." if candidate == path else "it starts over."))
+                continue
+            self.state = state
+            break
         self.model = None
         self.writing = None
 
@@ -131,6 +151,10 @@ class Resume:
         if time.time() - self.saved_at < self.every:
             return
         self.saved_at = time.time()
+        if not all(bool(torch.isfinite(p).all()) for p in self.model.parameters()):
+            emit("warning", message="The weights are not numbers (NaN) at step %d: the run is not saved, so the "
+                                    "last save stays good." % step)
+            return
         self.wait()
         state = _on_cpu({"fingerprint": self.fingerprint, "stage": self.stage, "step": step, "time": time.time(),
                          "model": self.model.state_dict(), "optimizer": [o.state_dict() for o in optimizer.optimizers]})
@@ -141,6 +165,9 @@ class Resume:
         part = self.path + ".part"
         try:
             torch.save(state, part)
+            # The save before stays beside it, in case this one turns out bad.
+            if os.path.exists(self.path):
+                os.replace(self.path, self.previous)
             os.replace(part, self.path)
             log("Saved the run at step %d, to go on from there if it stops." % step)
         except OSError as error:
@@ -154,10 +181,11 @@ class Resume:
 
     def finish(self):
         self.wait()
-        try:
-            os.remove(self.path)
-        except OSError:
-            pass
+        for saved in (self.path, self.previous):
+            try:
+                os.remove(saved)
+            except OSError:
+                pass
 
 
 # Training longer than this on this computer is better done on a GPU server (File › Export as Python).
@@ -336,6 +364,8 @@ def run_steps(runner, settings, steps, stage_name, compute, counter, after_backw
     timed_from, estimate_at = 5, 25
     cramped = 0
     retries = _alloc_retries(runner.device)
+    # Updates skipped in a row because the gradients were not numbers (NaN or infinite), and the last norm.
+    broken, norm = 0, float("nan")
     while step < steps:
         try:
             loss, extra = compute(step)
@@ -361,13 +391,24 @@ def run_steps(runner, settings, steps, stage_name, compute, counter, after_backw
             after_backward()
         if (step + 1) % accumulate == 0 or step + 1 == steps:
             if precision.unscale(params):
-                if clip > 0:
-                    torch.nn.utils.clip_grad_norm_(params, clip)
-                if offload:
-                    optim.offload(optimizer, runner.device)
-                optimizer.step(step)
-                if offload:
-                    optim.offload(optimizer, torch.device("cpu"))
+                norm = float(torch.nn.utils.clip_grad_norm_(params, clip if clip > 0 else float("inf")))
+                if math.isfinite(norm):
+                    broken = 0
+                    if offload:
+                        optim.offload(optimizer, runner.device)
+                    optimizer.step(step)
+                    if offload:
+                        optim.offload(optimizer, torch.device("cpu"))
+                else:
+                    # One bad step would make every weight NaN, and the next save would keep them so.
+                    broken += 1
+                    if broken in (1, 10):
+                        emit("warning", message="Step %d's gradients were not numbers: its update is skipped."
+                             % (step + 1))
+                    if broken >= 50:
+                        raise SystemExit("Training broke down: 50 updates in a row had gradients that were not "
+                                         "numbers. Nothing was saved from them; lower the learning rates and go on "
+                                         "from the last save.")
             optimizer.zero_grad()
         if loss is not None:
             last = float(loss.detach())
@@ -393,7 +434,8 @@ def run_steps(runner, settings, steps, stage_name, compute, counter, after_backw
             ESTIMATE.at(STAGE_NAMES.get(stage_name, stage_name), step, steps, first, estimate_at - timed_from)
         if step % 5 == 0 or step + 1 == steps:
             emit("progress", stage=stage_name, step=step + 1, steps=steps,
-                 loss=None if math.isnan(last) else round(last, 4), **(extra or {}))
+                 loss=None if math.isnan(last) else round(last, 4),
+                 grad_norm=round(norm, 3) if math.isfinite(norm) else None, **(extra or {}))
         step += 1
     return last
 
@@ -1191,6 +1233,8 @@ def main(path):
         plan = json.load(handle)
     out_dir = plan["out_dir"]
     os.makedirs(out_dir, exist_ok=True)
+    global LOG_FILE
+    LOG_FILE = os.path.join(out_dir, "train.log")
     random.seed(plan.get("seed", 0))
     torch.manual_seed(plan.get("seed", 0))
     global STARTED

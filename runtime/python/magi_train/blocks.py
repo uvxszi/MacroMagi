@@ -637,7 +637,9 @@ class MoE(nn.Module):
         if self.gating == "sigmoid":
             return torch.sigmoid(logits)
         if self.gating == "sqrt_softplus":
-            return torch.sqrt(F.softplus(logits))
+            # In float32 and kept off zero: a score below about -104 makes softplus 0, where the square
+            # root's gradient is infinite – NaN, which spread to every weight of a long run.
+            return torch.sqrt(F.softplus(logits.float()).clamp_min(1e-30))
         return torch.softmax(logits, dim=-1)
 
     def forward(self, x, tokens):

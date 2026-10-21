@@ -256,7 +256,7 @@ When you press **Train**, MacroMagi checks the pipeline, writes a plan and the d
 
 **A run that stopped goes on with the same tokens**: the tokens learned at its start are read back from `tokenizer.json`, not learned again, and a corpus cut into other tokens is cut again rather than used.
 
-**Long runs go on where they stopped.** The trainer saves where it is every 20 minutes (`MAGI_TRAIN_SAVE_MINUTES`) – training waits only for a copy in system memory, and the file is written beside it – and picks up from there when it runs again with the same plan.
+**Long runs go on where they stopped.** The trainer saves where it is every 20 minutes (`MAGI_TRAIN_SAVE_MINUTES`) – training waits only for a copy in system memory, and the file is written beside it – and picks up from there when it runs again with the same plan. The save before is kept too (`resume.prev.pt`), and a model whose weights are not numbers (NaN) is never saved: a step whose gradients are not numbers is skipped, and fifty in a row stop the run. Everything the console shows also goes into `out/train.log`, with each step's gradient norm, so a run's history outlives the console.
 
 ### Training on a GPU server
 
