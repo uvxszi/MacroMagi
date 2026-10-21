@@ -2788,6 +2788,8 @@ pub struct Common {
     pub blocks: Vec<ArchBlock>,
     /// Setup blocks it adds, with their part of the model (`Null`: the block's default).
     pub setup: Vec<(&'static str, Value)>,
+    /// A size of Magi: the recipe's steps and corpora are scaled to it too.
+    pub size: Option<&'static MagiSize>,
 }
 
 /// Magi's thinking: on – it plans before it acts, and thinks again between tool calls.
@@ -2900,27 +2902,30 @@ fn with_ffn(mut b: ArchBlock, ffn: ArchBlock) -> ArchBlock {
     b
 }
 
-/// The architectures Presets › Commons offers: Magi, and Magi 150M to try a recipe quickly.
+/// The architectures Presets › Commons offers: Magi 400M, and Magi 150M to try the recipe quickly.
 pub fn commons() -> Vec<Common> {
     let setup = || {
         vec![(kinds::THINKING, magi_thinking()), (kinds::EFFORT, json!(magi_effort())), (kinds::MEMORY, Value::Null)]
     };
     vec![
         Common {
-            name: "Magi",
+            name: "Magi 400M",
             description: "MacroMagi's text architecture: about 418M parameters, 148M at work per token. 32 layers, \
                       three in four looking at the last 1,024–2,048 tokens, DeepSeekMoE experts, multi-token prediction \
                       while training, 8K tokens in training and 128K when it runs. It trains on a GPU server \
                       (File › Export as Python) and runs in MacroMagi.",
             blocks: magi_blocks(),
             setup: setup(),
+            size: Some(&MAGI),
         },
         Common {
             name: "Magi 150M",
-            description: "Magi's design at about 150M parameters, 64M at work per token: 512 wide, 24 layers. \
-                          To try a recipe in a few hours before training the full size.",
+            description: "Magi's design and recipe at about 150M parameters, 64M at work per token: 512 wide, \
+                          24 layers, 750 million tokens of pretraining. To try the recipe in a few hours before \
+                          training the full size.",
             blocks: magi_blocks_of(&MAGI_TEST),
             setup: setup(),
+            size: Some(&MAGI_TEST),
         },
     ]
 }
@@ -3032,7 +3037,51 @@ pub fn apply_common(graph: &mut Graph, common: &Common, at: [f32; 2]) -> Vec<Nod
             let _ = graph.connect(&reg, PortRef::new(id, SETUP), PortRef::new(start, SETUP));
         }
     }
+    if let Some(size) = common.size {
+        scale_recipe(graph, size);
+    }
     created
+}
+
+/// Magi's recipe at `size`: the stages' steps, the pretraining corpora's tokens and warm-up – and the
+/// name, while it is a size's name.
+pub fn scale_recipe(graph: &mut Graph, size: &MagiSize) {
+    use kinds::*;
+    let warmups: Vec<NodeId> = graph
+        .nodes()
+        .filter(|n| n.kind == PRETRAIN)
+        .filter_map(|n| graph.data_source(n.id, OPTIMIZER).map(|p| p.node))
+        .collect();
+    for node in graph.nodes_mut() {
+        let steps = match node.kind.as_str() {
+            PRETRAIN => Some(size.pretrain_steps),
+            FINETUNE => Some(size.finetune_steps),
+            COMPACTION => Some(size.compaction_steps),
+            RL => Some(size.rl_steps),
+            _ => None,
+        };
+        if let Some(steps) = steps {
+            node.set_param("steps", steps);
+        }
+        if node.kind == CORPUS {
+            let repo: String = node.param("repo").unwrap_or_default();
+            if repo.is_empty() || repo.contains("fineweb-edu") {
+                node.set_param("tokens", size.web_tokens);
+            } else if repo.contains("opc-fineweb-code") {
+                node.set_param("tokens", size.code_tokens);
+            }
+        }
+        if warmups.contains(&node.id) {
+            node.set_param("warmup", size.warmup);
+        }
+        if node.kind == INFO
+            && let Some(mut info) = node.param::<InfoSection>("value")
+            && [MAGI.name, MAGI_TEST.name].contains(&info.name.as_str())
+        {
+            info.name = size.name.into();
+            node.set_param("value", info);
+        }
+    }
 }
 
 // ---- the training plan ----------------------------------------------------------
@@ -3637,8 +3686,33 @@ mod tests {
     }
 
     #[test]
+    fn magi_150m_scales_the_recipe_and_400m_puts_it_back() {
+        use kinds::*;
+        let mut graph = Graph::from(default_canvas(&text_model(), false, false, &files()));
+        let steps = |graph: &Graph| -> Vec<u64> {
+            [PRETRAIN, FINETUNE, COMPACTION, RL]
+                .iter()
+                .filter_map(|kind| graph.nodes().find(|n| n.kind == *kind).and_then(|n| n.param("steps")))
+                .collect()
+        };
+        let tokens = |graph: &Graph| -> Vec<u64> {
+            graph.nodes().filter(|n| n.kind == CORPUS).filter_map(|n| n.param("tokens")).collect()
+        };
+        assert_eq!(steps(&graph), [22_900, 4_000, 400, 300]);
+        apply_common(&mut graph, &commons()[1], [0.0, 0.0]);
+        assert_eq!(steps(&graph), [5_700, 1_000, 100, 100]);
+        let mut small = tokens(&graph);
+        small.sort();
+        assert_eq!(small, [190_000_000, 200_000_000, 560_000_000], "code, conversations (as they were), web");
+        let size = graph.nodes().find(|n| n.kind == SIZE).and_then(|n| n.param::<u32>("width"));
+        assert_eq!(size, Some(512));
+        apply_common(&mut graph, &commons()[0], [0.0, 0.0]);
+        assert_eq!(steps(&graph), [22_900, 4_000, 400, 300]);
+    }
+
+    #[test]
     fn commons_put_magi_back_in_place() {
-        assert_eq!(commons().iter().map(|c| c.name).collect::<Vec<_>>(), ["Magi", "Magi 150M"], "Magi only");
+        assert_eq!(commons().iter().map(|c| c.name).collect::<Vec<_>>(), ["Magi 400M", "Magi 150M"], "Magi only");
         let mut graph = Graph::from(default_canvas(&text_model(), false, false, &files()));
         // Changed by hand…
         let layers: Vec<NodeId> = graph.nodes().filter(|n| n.kind == kinds::LAYERS).map(|n| n.id).collect();

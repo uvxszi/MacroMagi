@@ -83,11 +83,7 @@ enum Pending {
 #[derive(Clone)]
 enum MagicPending {
     New,
-    NewModel {
-        text: bool,
-    },
-    /// Magi 150M: the recipe at a size that trains in a few hours.
-    NewTestMagi,
+    NewModel { text: bool },
     Open(Option<PathBuf>),
     Import(ImportFrom),
     OpenModel(String),
@@ -721,14 +717,6 @@ impl MagiApp {
                 } else {
                     "A new vision model: give it answers and pictures, choose where Compile saves it, then Train."
                 });
-            }
-            MagicPending::NewTestMagi => {
-                let file = crate::magic::new_model_of(true, &magi_core::nodes::studio::MAGI_TEST);
-                self.set_magic_doc(Some(MagicDoc::new(file, None, Vec::new())));
-                self.toast(
-                    "Magi 150M: Magi's design and recipe at about 150M parameters, to try in a few hours on a GPU \
-                     server (File › Export as Python) before the full size.",
-                );
             }
             MagicPending::Open(path) => {
                 let path = path.or_else(|| {
@@ -1894,7 +1882,6 @@ impl MagiApp {
                 }
             };
             item(ui, format!("{}  New text model", icon::ROBOT), "Ctrl+N", MagicPending::NewModel { text: true });
-            item(ui, format!("{}  New text model: Magi 150M (a quick test)", icon::ROBOT), "", MagicPending::NewTestMagi);
             item(ui, format!("{}  New vision model", icon::EYE), "", MagicPending::NewModel { text: false });
             item(ui, format!("{}  Open…", icon::FOLDER_OPEN), "Ctrl+O", MagicPending::Open(None));
             ui.menu_button(format!("{}  Open recent", icon::CLOCK_COUNTER_CLOCKWISE), |ui| {
@@ -2049,7 +2036,10 @@ impl MagiApp {
             doc.sync_canvas();
             self.magic_tab.view.selection = created.into_iter().collect();
             self.magic_tab.view.request_fit();
-            self.toast(format!("{} put in place of the architecture", commons[index].name));
+            self.toast(format!(
+                "{} put in place of the architecture, with its recipe sized to it",
+                commons[index].name
+            ));
         }
         if let Some(nodes) = insert
             && let Some(doc) = &mut self.magic_tab.doc
@@ -2488,7 +2478,6 @@ impl MagiApp {
     fn magic_event(&mut self, ctx: &egui::Context, event: MagicEvent, displays: &magi_core::geom::Displays) {
         match event {
             MagicEvent::NewModel { text } => self.magic_guarded(MagicPending::NewModel { text }),
-            MagicEvent::NewTestMagi => self.magic_guarded(MagicPending::NewTestMagi),
             MagicEvent::Toast(text) => self.toast(text),
             MagicEvent::Train(choice) => self.start_training(ctx, choice),
             MagicEvent::SaveBase(stage) => self.save_base_model(stage),

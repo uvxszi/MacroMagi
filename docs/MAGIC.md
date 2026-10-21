@@ -30,7 +30,7 @@ A `.magic` file is the **workspace**: the canvas and the setup, and as chosen th
 
 ## Quick start
 
-1. **File › New text model** (on the Magic tab). It opens as **Magi**: the architecture (about 418 million parameters), its sixteen tools, Thinking and Reasoning Effort, and the whole recipe – pretraining on three billion tokens of web text and code, fine-tuning on agent work and conversations, compaction, reinforcement learning – with its fifteen example datasets. **File › New text model: Magi 150M (a quick test)** is the same design and recipe at about 150 million parameters (64 million at work per token; 512 wide, 24 layers) on 750 million tokens: train it first, a few hours on a G4, to see the whole recipe work before the full size.
+1. **File › New text model** (on the Magic tab). It opens as **Magi**: the architecture (about 418 million parameters), its sixteen tools, Thinking and Reasoning Effort, and the whole recipe – pretraining on three billion tokens of web text and code, fine-tuning on agent work and conversations, compaction, reinforcement learning – with its fifteen example datasets. **Presets › Commons › Magi 150M** makes it the same design and recipe at about 150 million parameters (64 million at work per token; 512 wide, 24 layers) on 750 million tokens: train it first, a few hours on a G4, to see the whole recipe work before the full size.
 2. **File › Export as Python**, and train it on a GPU server: Colab's **G4** (an RTX PRO 6000) or a rented card. A desktop card cannot train a model this size in a reasonable time. See [Training on a GPU server](#training-on-a-gpu-server).
 3. When it is done, open the `Magi.szi` it wrote (File › Open, or the AI Agent window's *Load model file…*).
 4. **Settings › Runtime › Magi's tools**: download **MagiDB** (or let the model read it online), and install **Document tools** and **Image descriptions** if it is to open documents and look at pictures.
@@ -52,7 +52,7 @@ One architecture, the best this size allows for an agent that reads long transcr
 | Tokens | 32,768 learned where it trains, from the start of its corpora | About 4.5 bytes of text a token. |
 | Thinking | On, and two efforts: *standard* and *superior* | It thinks before each step; at *superior* it plans more and checks more. |
 
-About **418 million parameters**, **148 million** at work for each token. **Presets › Commons › Magi** puts this architecture back in place of the canvas's (after you have changed it). The DeepSeek blocks (latent and compressed attention, hyper-connections) are still in the block list for experiments; the native engine runs Magi's layout.
+About **418 million parameters**, **148 million** at work for each token. **Presets › Commons › Magi 400M** puts this architecture and its recipe's steps back in place of the canvas's (after you have changed them). The DeepSeek blocks (latent and compressed attention, hyper-connections) are still in the block list for experiments; the native engine runs Magi's layout.
 
 ## Magi's tools
 
@@ -114,9 +114,9 @@ The banner holds the tab's menus, as on the Macro tab:
 
 | Menu | On the Magic tab |
 | --- | --- |
-| **File** | New text model (Ctrl+N), New text model: Magi 150M (a quick test), New vision model, Open (Ctrl+O: a `.magic` workspace or a `.szi` model), Open recent, Import (an ONNX project folder, a `.zip` or `.onnx`), Save (Ctrl+S), Save as, **Export as Python** and its experimental twin, which tries compiled layers (see [Exporting the workspace as Python](#exporting-the-workspace-as-python)), Close the model. |
+| **File** | New text model (Ctrl+N), New vision model, Open (Ctrl+O: a `.magic` workspace or a `.szi` model), Open recent, Import (an ONNX project folder, a `.zip` or `.onnx`), Save (Ctrl+S), Save as, **Export as Python** and its experimental twin, which tries compiled layers (see [Exporting the workspace as Python](#exporting-the-workspace-as-python)), Close the model. |
 | **Options** | The usual options, plus *Optimize environment when training* and *Notify when training ends* (a sound and a desktop notification when a run of more than a minute finishes or fails; on by default). |
-| **Presets** | **Commons** (Magi's architecture), your saved Magic blocks, and *Save selected blocks*. |
+| **Presets** | **Commons** – *Magi 400M* and *Magi 150M*: Magi's architecture at that size, with the recipe's steps and pretraining corpora sized to it – your saved Magic blocks, and *Save selected blocks*. |
 | **Add** | The block list (right-clicking the canvas opens it too). |
 | **View** | Console, Block settings, Grid, Find, Fit to view, Actual size. |
 | Undo / Redo | Every change to the canvas and the pictures (Ctrl+Z, Ctrl+Y). |

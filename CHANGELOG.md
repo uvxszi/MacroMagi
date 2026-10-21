@@ -8,7 +8,7 @@ File-format changes are called out explicitly; see [docs/FILE_FORMAT.md](docs/FI
 
 ### Added
 
-- **Magi 150M** (File › New text model: Magi 150M, the Magic tab's start, Presets › Commons): Magi's design and recipe at about 150M parameters, 64M at work per token – 512 wide, 24 layers, 750 million tokens of pretraining – to try the whole recipe in a few hours on a GPU server before the full size.
+- **Magi 150M** (Presets › Commons, beside *Magi 400M* – Magi's own preset, renamed – each sizing the recipe's steps and corpora too): Magi's design and recipe at about 150M parameters, 64M at work per token – 512 wide, 24 layers, 750 million tokens of pretraining – to try the whole recipe in a few hours on a GPU server before the full size.
 - **A long run is rehearsed first**: before a training of more than a thousand steps starts (not when it goes on from a save), every stage runs three steps on the real model and data and the model is written, in a scratch folder – a crash in a later stage shows in minutes, not hours in. The learned tokens and cut corpora are kept for the run; `MAGI_TRAIN_REHEARSE=0` skips it.
 
 ### Changed
