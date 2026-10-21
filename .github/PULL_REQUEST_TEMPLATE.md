@@ -16,4 +16,4 @@
 - [ ] `docs/NODES.md` was regenerated if a block definition changed
 - [ ] `docs/FILE_FORMAT.md` was updated if a file format changed, and old files still load
 - [ ] `CHANGELOG.md` has an entry if users would notice the change
-- [ ] I agree to the contribution terms in [TERMS.md](../TERMS.md)
+- [ ] I agree to the contribution terms in [EULA.md](../EULA.md)

@@ -7,7 +7,7 @@ Read these before changing anything substantial:
 1. [README.md](README.md) – what the app does, from the user's side.
 2. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) – how it is built and why.
 3. [CONTRIBUTING.md](CONTRIBUTING.md) – commands, code guidelines, testing.
-4. [TERMS.md](TERMS.md) – the project is source available, not open source.
+4. [EULA.md](EULA.md) – the end-user license agreement: the project is source available, not open source.
 
 ## Ground rules
 
@@ -76,6 +76,7 @@ Newest first. One entry per piece of work: the date, who made it, and what chang
 
 | Date | By | Revision |
 | --- | --- | --- |
+| 2026-10-21 | Claude (Opus 5.5) | 0.1.8 prep: `TERMS.md` → `EULA.md` (Aseprite-style EULA with MacroMagi's terms, contributions and code of conduct; release workflow, PR template, CONTRIBUTING, AGENTS, README *License* follow). Roadmap: code signing (unknown publisher) moved up; *More model inputs* dropped. |
 | 2026-10-21 | Claude (Opus 5.5) | **One job per file** (the user's rule): `.magi` macros (+ settings/presets as chosen), `.mp` presets, `.magic` Magic workspaces (+ datasets/pictures as chosen, never the model), `.szi` AI models. `MagicDoc::save_workspace` (Ctrl+S and Compile Package) sets `include.model/weights` false and writes a trained model to `<stem>.szi` beside the workspace (`write_szi`; rewritten only when `fingerprint` of weights/ONNX changed), naming it in `package`. Macro model assets are `.szi` bytes (`MagicFile::for_macro` → `szi::to_bytes`, `AssetKind::Model` extension `szi`); readers use `szi::model_from_bytes` (falls back to old `.magic` assets); `szi::needs_onnx` keeps a vision model's ONNX. Test `a_saved_workspace_keeps_its_model_in_a_szi_beside_it`. |
 | 2026-10-21 | Claude (Opus 5.5) | Docs brought up to date for the v0.1.7 release: CHANGELOG has one dated 0.1.7 section (the unreleased 0.1.6–0.1.7.2 merged, what came and went in between left out), release dates on released versions (0.1.0, 0.1.3, 0.1.4, 0.1.5, 0.1.7; 0.1.1/0.1.2 shipped in 0.1.3) and an Unreleased section; README tagline and intro name Magic, status 0.1.7, 45 blocks, `.szi` in Files, network use, layout with `magidb/`; FILE_FORMAT/MAGIC/ARCHITECTURE/CONTRIBUTING/SECURITY follow. `macromagi FILE.szi` opens it in the Magic tab (it was read as a macro); the CLI help names Magic. Python engine `__version__` 0.1.7. Old nested clone removed; `origin` is MagiGun/MacroMagi. |
 | 2026-10-20 | Claude (Opus 5.5) | MagiDB's GitHub address is `MagiGun/MagiDB` (`components::MAGIDB_ZIP`, the `DEFAULT_URL` of `nt/db_read`, `nt/db_search` and `magidb/tools/magidb.py`); the org is MagiGun, MacroMagi is only the app's repo. Document tools name file types (.docx, .xlsx, .pptx, .pdf, .csv), not the Office programs: tool.json, docs, MagiDB pages (index rebuilt) and the same text in `work.jsonl`/`make_work_data.py`. |

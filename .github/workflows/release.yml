@@ -64,7 +64,7 @@ jobs:
         run: |
           package="MacroMagi-${TAG}-windows-x64"
           mkdir -p "dist/$package"
-          cp "target/$TARGET/release/macromagi.exe" README.md CHANGELOG.md TERMS.md "dist/$package/"
+          cp "target/$TARGET/release/macromagi.exe" README.md CHANGELOG.md EULA.md "dist/$package/"
           curl -fsSL -o python.zip "https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-embed-amd64.zip"
           7z x python.zip -o"dist/$package/python" > /dev/null
           rm python.zip

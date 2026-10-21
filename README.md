@@ -47,7 +47,7 @@ MacroMagi is a small, portable desktop tool for automating keyboard, mouse and c
 - [Credits](#credits)
 - [Contributing](#contributing)
 - [Using MacroMagi responsibly](#using-macromagi-responsibly)
-- [Terms](#terms)
+- [License](#license)
 
 ## Features
 
@@ -512,11 +512,10 @@ Each layer only depends on the ones below it, and everything a block *is* (its p
 Not promises, but the direction:
 
 - **Add-ons.** User-made blocks, written in Python, described by the same definition format the built-in blocks use.
-- **More model inputs**: text recognition and sound as blocks a model reads from, beside pictures.
+- **Code signing** for the Windows build, so Windows stops calling MacroMagi an unknown publisher and SmartScreen stops warning.
 - **Sending gamepad input.** This needs a virtual controller device, which on Windows means a driver – at odds with being portable. The plan is to use one if it is already installed.
 - **Editor**: a minimap, aligning and tidying, highlighting the path a run took.
 - **Recording**: window-relative coordinates, rescaling to another screen size, merging and splitting recordings.
-- **Code signing** for the Windows build, so SmartScreen stops warning.
 - Switch to Window, program rules and smart recording on Linux and macOS.
 
 ## Credits
@@ -536,6 +535,6 @@ MacroMagi sends real input to your computer.
 - Sound blocks can listen to your microphone while a macro runs them. Nothing heard is stored or sent anywhere.
 - Automation is against the rules of many online games and services. Whether you may use it is between you and them.
 
-## Terms
+## License
 
-MacroMagi is **source available**: you may read the code, build it yourself, modify it for your own use and contribute back – but you may not sell the program or its code, or distribute builds of it. The full terms, including how contributions are licensed and the code of conduct, are in [TERMS.md](TERMS.md).
+MacroMagi is **source available** under its [end-user license agreement (EULA.md)](EULA.md): you may use it, read the code, build it yourself, modify it for your own use and contribute back – but you may not sell the program or its code, or distribute builds of it. What you make with it – macros, datasets, models – is yours. The EULA also covers how contributions are licensed, and the code of conduct.

@@ -2,7 +2,7 @@
 
 Thanks for wanting to help. This page covers how to get set up, how the project is organised, and what a good change looks like.
 
-MacroMagi is source available under the [MacroMagi Terms](TERMS.md). By contributing you agree to the contribution terms in section 3 of that document, and to its code of conduct. If you work with an AI coding agent, point it at [AGENTS.md](AGENTS.md).
+MacroMagi is source available under the [MacroMagi EULA](EULA.md). By contributing you agree to the contribution terms in section 3 of that document, and to its code of conduct. If you work with an AI coding agent, point it at [AGENTS.md](AGENTS.md).
 
 - [Ways to help](#ways-to-help)
 - [Getting set up](#getting-set-up)
